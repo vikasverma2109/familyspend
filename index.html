@@ -988,10 +988,11 @@ function renderCloud(){
       <label class="field-label">JSONBin API Key</label>
       <input class="note-input" id="cloud-apikey" type="text" placeholder="Paste your API key here..." value="${cfg.apiKey||""}"/>
 
-      ${cfg.binId ? `
-      <label class="field-label">Bin ID (already set ✅)</label>
-      <input class="note-input" type="text" value="${cfg.binId}" readonly style="color:#888"/>
-      ` : ""}
+      <label class="field-label">Bin ID ${cfg.binId ? "(already set ✅)" : "(leave empty if new)"}</label>
+      <input class="note-input" id="cloud-binid" type="text" placeholder="Paste Vikas Bin ID here to share same data..." value="${cfg.binId||""}"/>
+      <div style="font-size:12px;color:#f59e0b;margin-bottom:14px">
+        ⚠️ Both phones must use SAME Bin ID to sync!
+      </div>
 
       <button class="save-btn" style="margin-bottom:12px" onclick="connectCloud()">
         ☁️ Connect & Sync Now
@@ -1018,21 +1019,26 @@ function renderCloud(){
 }
 
 async function connectCloud(){
-  const keyEl = document.getElementById("cloud-apikey");
+  const keyEl  = document.getElementById("cloud-apikey");
+  const binEl  = document.getElementById("cloud-binid");
   if(!keyEl||!keyEl.value){ showToast("Paste your API key first!",true); return; }
   const apiKey = keyEl.value.trim();
+  const manualBinId = binEl ? binEl.value.trim() : "";
   showToast("Connecting...");
-  const cfg = getCloudConfig();
-  let binId = cfg.binId;
+  let binId = manualBinId;
   if(!binId){
-    // Create new bin
+    // Create new bin only if no bin ID entered
     binId = await createBin(apiKey);
     if(!binId){ showToast("Invalid API key! Check and try again",true); return; }
   }
   // Save config
   localStorage.setItem(CLOUD_KEY, JSON.stringify({apiKey, binId}));
-  // Upload existing data
-  await cloudSave(state.expenses);
+  // Load data from cloud first (to get existing expenses)
+  const loaded = await cloudLoad();
+  if(!loaded){
+    // If load fails, push local data
+    await cloudSave(state.expenses);
+  }
   showToast("✅ Cloud sync connected!");
   setState({view:"home"});
 }
