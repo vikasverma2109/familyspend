@@ -203,6 +203,15 @@ let state = {
 };
 
 function setState(patch){
+  // Preserve current input values before any state change
+  if(state.view === "add"){
+    const a = document.getElementById("inp-amount");
+    const n = document.getElementById("inp-note");
+    const d = document.getElementById("inp-date");
+    if(a && a.value !== undefined && a.value !== "") state.form.amount = a.value;
+    if(n && n.value !== undefined) state.form.note = n.value;
+    if(d && d.value) state.form.manualDate = d.value;
+  }
   state = {...state,...patch};
   render();
 }
@@ -603,7 +612,7 @@ function renderHome(){
       <span class="sync-dot" id="sync-dot"></span>
       <span id="sync-text">${getCloudConfig().binId ? "☁️ Cloud sync ON" : "📱 Local only"}</span>
       <button class="analytics-btn" onclick="setState({view:'stats'})">📊 Analytics</button>
-      <button style="background:none;border:none;color:${getCloudConfig().binId?'#10b981':'#f59e0b'};cursor:pointer;font-size:12px;font-weight:800;margin-left:6px" onclick="setState({view:'cloud'})">⚙️</button>
+<button style="background:none;border:none;color:${getCloudConfig().binId?'#10b981':'#f59e0b'};cursor:pointer;font-size:12px;font-weight:800;margin-left:6px" onclick="setState({view:'cloud'})">⚙️</button>
     </div>
 
     <!-- EXPORT IMPORT BOX -->
@@ -1070,15 +1079,35 @@ setInterval(async()=>{
 function render(){
   saveLocal();
   const {user,view,toast} = state;
+
+  // Save input values before re-render so they don't reset
+  if(view==="add"){
+    const a = document.getElementById("inp-amount");
+    const n = document.getElementById("inp-note");
+    const d = document.getElementById("inp-date");
+    if(a && a.value) state.form.amount = a.value;
+    if(n && n.value) state.form.note   = n.value;
+    if(d && d.value) state.form.manualDate = d.value;
+  }
+
   let content = "";
-  if(!user)            content = renderLogin();
-  else if(view==="add")    content = renderAdd();
-  else if(view==="stats")  content = renderStats();
-  else if(view==="cloud")  content = renderCloud();
-  else                 content = renderHome();
+  if(!user)               content = renderLogin();
+  else if(view==="add")   content = renderAdd();
+  else if(view==="stats") content = renderStats();
+  else if(view==="cloud") content = renderCloud();
+  else                    content = renderHome();
+
   document.getElementById("root").innerHTML =
     (toast?`<div class="toast" style="background:${toast.err?'#ef4444':'#10b981'}">${toast.msg}</div>`:"") +
     content;
+
+  // Restore cursor position in amount field if it was focused
+  if(view==="add"){
+    const a = document.getElementById("inp-amount");
+    if(a && state.form.amount) {
+      a.value = state.form.amount;
+    }
+  }
 }
 
 render();
