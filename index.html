@@ -125,6 +125,15 @@ input:checked + .date-slider:before { transform:translateX(20px); }
 .bar-fill { width:100%; border-radius:3px 3px 0 0; min-height:2px; }
 .bar-lbl { font-size:9px; color:#555; }
 
+/* EXPORT SCREEN */
+.export-screen { padding:18px; }
+.month-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px; }
+.month-btn { padding:10px 4px; border-radius:12px; border:2px solid #2a2a4a; background:#13132a; color:#aaa; font-size:13px; font-weight:700; cursor:pointer; text-align:center; }
+.month-btn.active { border-color:#667eea; background:#667eea; color:#fff; }
+.export-result { background:#1a2a1a; border:2px solid #10b981; border-radius:14px; padding:16px; margin-bottom:14px; display:none; }
+.export-result.show { display:block; }
+.export-result-title { color:#10b981; font-weight:800; font-size:14px; margin-bottom:8px; }
+.export-result-stats { color:#aaa; font-size:13px; line-height:1.8; }
 .toast { position:fixed; top:16px; left:50%; transform:translateX(-50%); color:#fff; padding:10px 22px; border-radius:30px; font-size:14px; font-weight:700; z-index:999; white-space:nowrap; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
 /* EXPORT IMPORT */
 .data-box { margin:0 16px 8px; background:#13132a; border-radius:16px; padding:14px; }
@@ -200,6 +209,7 @@ let state = {
   filterFrom: "",
   filterTo: "",
   filterActive: false,
+  exportView: false,
 };
 
 function setState(patch){
@@ -612,6 +622,7 @@ function renderHome(){
       <span class="sync-dot" id="sync-dot"></span>
       <span id="sync-text">${getCloudConfig().binId ? "☁️ Cloud sync ON" : "📱 Local only"}</span>
       <button class="analytics-btn" onclick="setState({view:'stats'})">📊 Analytics</button>
+      <button style="background:none;border:none;color:#10b981;cursor:pointer;font-size:12px;font-weight:800;margin-left:6px" onclick="setState({view:'export'})">📥 Export</button>
 <button style="background:none;border:none;color:${getCloudConfig().binId?'#10b981':'#f59e0b'};cursor:pointer;font-size:12px;font-weight:800;margin-left:6px" onclick="setState({view:'cloud'})">⚙️</button>
     </div>
 
@@ -1074,6 +1085,177 @@ setInterval(async()=>{
   const r = await cloudLoad();
   if(r) render();
 }, 10000);
+
+// ── EXPORT SCREEN ─────────────────────────────────────────────────────────
+function renderExport(){
+  const now = new Date();
+  const years = [...new Set(state.expenses.map(e=>new Date(e.timestamp).getFullYear()))].sort((a,b)=>b-a);
+  if(!years.includes(now.getFullYear())) years.unshift(now.getFullYear());
+
+  return `<div class="page">
+    <div class="header">
+      <button class="back-btn" onclick="setState({view:'home'})">← Back</button>
+      <span class="header-title">📥 Export to Excel</span>
+      <div style="width:60px"></div>
+    </div>
+    <div class="export-screen">
+
+      <!-- OPTION 1: BY MONTH -->
+      <div style="background:#13132a;border-radius:16px;padding:16px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:800;color:#7c7cff;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px">📅 Export by Month</div>
+        <label class="field-label">Year</label>
+        <select class="picker" id="exp-year" style="width:100%;margin-bottom:12px" onchange="render()">
+          ${years.map(y=>`<option value="${y}">${y}</option>`).join("")}
+        </select>
+        <label class="field-label">Select Month</label>
+        <div class="month-grid">
+          ${MONTHS.map((m,i)=>`
+          <button class="month-btn" id="mbtn-${i}" onclick="selectMonth(${i})">${m}</button>`).join("")}
+        </div>
+        <button class="save-btn" onclick="exportByMonth()" style="font-size:15px;padding:14px">
+          📊 Download Month Report
+        </button>
+      </div>
+
+      <!-- OPTION 2: BY DATE RANGE -->
+      <div style="background:#13132a;border-radius:16px;padding:16px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:800;color:#f093fb;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px">📆 Export by Date Range</div>
+        <label class="field-label">From Date</label>
+        <input type="date" id="exp-from" class="manual-date-input" style="margin-bottom:12px"/>
+        <label class="field-label">To Date</label>
+        <input type="date" id="exp-to" class="manual-date-input" style="margin-bottom:14px"/>
+        <button class="save-btn" onclick="exportByRange()" style="background:linear-gradient(135deg,#f093fb,#f5576c);font-size:15px;padding:14px">
+          📊 Download Range Report
+        </button>
+      </div>
+
+      <!-- EXPORT ALL -->
+      <div style="background:#13132a;border-radius:16px;padding:16px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:800;color:#10b981;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px">📦 Export All Data</div>
+        <div style="color:#888;font-size:13px;margin-bottom:12px">${state.expenses.length} total expenses</div>
+        <button class="save-btn" onclick="exportAll()" style="background:linear-gradient(135deg,#10b981,#059669);font-size:15px;padding:14px">
+          📊 Download All Expenses
+        </button>
+      </div>
+
+      <!-- HOW TO OPEN -->
+      <div style="background:#1e1e3a;border-radius:14px;padding:14px">
+        <div style="font-size:12px;font-weight:800;color:#888;text-transform:uppercase;margin-bottom:8px">📖 How to open in Excel</div>
+        <div style="font-size:12px;color:#aaa;line-height:1.8">
+          1️⃣ Tap Download button above<br>
+          2️⃣ A popup shows — tap <strong style="color:#fff">Share 📤</strong><br>
+          3️⃣ Tap <strong style="color:#fff">Save to Files</strong> → Save<br>
+          4️⃣ Open <strong style="color:#fff">Files app</strong> → tap the .csv file<br>
+          5️⃣ Opens in <strong style="color:#fff">Microsoft Excel</strong> ✅
+        </div>
+      </div>
+
+    </div>
+  </div>`;
+}
+
+let selectedMonth = -1;
+
+function selectMonth(idx){
+  selectedMonth = idx;
+  // Update button styles
+  MONTHS.forEach((_,i)=>{
+    const btn = document.getElementById("mbtn-"+i);
+    if(btn) btn.className = "month-btn" + (i===idx?" active":"");
+  });
+}
+
+function buildCSV(expenses, title){
+  const sorted = [...expenses].sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+  const esc = v => '"'+String(v||"").replace(/"/g,'""')+'"';
+  const totalExp  = sorted.filter(e=>e.amount>0).reduce((s,e)=>s+e.amount,0);
+  const totalCash = sorted.filter(e=>e.amount<0).reduce((s,e)=>s+e.amount,0);
+  const net       = sorted.reduce((s,e)=>s+e.amount,0);
+  const NL = "\n";
+  let csv = "\uFEFF";
+  csv += esc(title)+NL+NL;
+  csv += "Date,Category,Paid By,Type,Amount (INR),Note"+NL;
+  sorted.forEach(e=>{
+    const cat   = CATEGORIES.find(c=>c.id===e.category);
+    const payer = USERS.find(u=>u.id===e.paidBy);
+    const date  = new Date(e.timestamp).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+    const type  = e.amount<0?"Refund/Cashback":"Expense";
+    csv += [esc(date),esc(cat?.label||e.category),esc(payer?.label||e.paidBy),esc(type),e.amount,esc(e.note)].join(",")+NL;
+  });
+  csv += NL;
+  csv += esc("Total Expenses")+",,,,"+ totalExp +","+NL;
+  csv += esc("Total Refunds") +",,,,"+ totalCash+","+NL;
+  csv += esc("Net Total")     +",,,,"+ net      +","+NL;
+  return {csv, count:sorted.length, totalExp, totalCash, net};
+}
+
+function downloadCSV(csv, filename){
+  try {
+    const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
+    // Try Web Share API first (works best on iPhone)
+    if(navigator.share && navigator.canShare){
+      const file = new File([blob], filename, {type:"text/csv"});
+      if(navigator.canShare({files:[file]})){
+        navigator.share({files:[file], title:"FamilySpend Export"})
+          .then(()=>showToast("✅ Shared successfully!"))
+          .catch(()=>fallbackDownload(blob,filename));
+        return;
+      }
+    }
+    fallbackDownload(blob, filename);
+  } catch(e){ showToast("❌ Export failed: "+e.message, true); }
+}
+
+function fallbackDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement("a");
+  a.href    = url;
+  a.download= filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast("✅ Downloaded! Open in Files app");
+}
+
+function exportByMonth(){
+  const yearEl = document.getElementById("exp-year");
+  const year   = yearEl ? parseInt(yearEl.value) : new Date().getFullYear();
+  if(selectedMonth===-1){ showToast("Please select a month first!",true); return; }
+  const filtered = state.expenses.filter(e=>{
+    const d = new Date(e.timestamp);
+    return d.getFullYear()===year && d.getMonth()===selectedMonth;
+  });
+  if(filtered.length===0){ showToast("No expenses for this month!",true); return; }
+  const title    = "FamilySpend — "+MONTHS[selectedMonth]+" "+year;
+  const {csv}    = buildCSV(filtered, title);
+  const filename = "FamilySpend-"+MONTHS[selectedMonth]+"-"+year+".csv";
+  downloadCSV(csv, filename);
+}
+
+function exportByRange(){
+  const fromEl = document.getElementById("exp-from");
+  const toEl   = document.getElementById("exp-to");
+  if(!fromEl?.value||!toEl?.value){ showToast("Please select both dates!",true); return; }
+  if(fromEl.value > toEl.value){ showToast("Start date must be before end date!",true); return; }
+  const filtered = state.expenses.filter(e=>{
+    const d = e.timestamp.split("T")[0];
+    return d >= fromEl.value && d <= toEl.value;
+  });
+  if(filtered.length===0){ showToast("No expenses in this range!",true); return; }
+  const title    = "FamilySpend — "+fromEl.value+" to "+toEl.value;
+  const {csv}    = buildCSV(filtered, title);
+  const filename = "FamilySpend-"+fromEl.value+"-to-"+toEl.value+".csv";
+  downloadCSV(csv, filename);
+}
+
+function exportAll(){
+  if(state.expenses.length===0){ showToast("No expenses to export!",true); return; }
+  const title    = "FamilySpend — All Expenses";
+  const {csv}    = buildCSV(state.expenses, title);
+  const filename = "FamilySpend-All-"+new Date().toISOString().split("T")[0]+".csv";
+  downloadCSV(csv, filename);
+}
 
 // ── MAIN RENDER ────────────────────────────────────────────────────────────
 function render(){
