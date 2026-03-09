@@ -1273,11 +1273,12 @@ function render(){
   }
 
   let content = "";
-  if(!user)               content = renderLogin();
-  else if(view==="add")   content = renderAdd();
-  else if(view==="stats") content = renderStats();
-  else if(view==="cloud") content = renderCloud();
-  else                    content = renderHome();
+  if(!user)                content = renderLogin();
+  else if(view==="add")    content = renderAdd();
+  else if(view==="stats")  content = renderStats();
+  else if(view==="cloud")  content = renderCloud();
+  else if(view==="export") content = renderExport();
+  else                     content = renderHome();
 
   document.getElementById("root").innerHTML =
     (toast?`<div class="toast" style="background:${toast.err?'#ef4444':'#10b981'}">${toast.msg}</div>`:"") +
