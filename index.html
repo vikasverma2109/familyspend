@@ -334,6 +334,20 @@ function delExpense(id){
   showToast("Deleted");
 }
 
+function yesterdayISO(){
+  const d = new Date();
+  d.setDate(d.getDate()-1);
+  return d.toISOString().split("T")[0];
+}
+
+function quickFilter(type){
+  if(type==="today"){
+    setState({filterFrom:todayISO(), filterTo:todayISO(), filterActive:true});
+  } else if(type==="yesterday"){
+    setState({filterFrom:yesterdayISO(), filterTo:yesterdayISO(), filterActive:true});
+  }
+}
+
 function applyFilter(){
   const f = document.getElementById("filter-from");
   const t = document.getElementById("filter-to");
@@ -590,6 +604,17 @@ function renderHome(){
         <span style="font-size:11px;color:#888">${u.id===user?"You":u.label}</span>
         <span style="font-weight:900;font-size:14px;color:${u.color}">${fmt(byUser[u.id])}</span>
       </div>`).join("")}
+    </div>
+
+    <!-- QUICK FILTER BUTTONS -->
+    <div style="display:flex;gap:8px;padding:0 16px 8px">
+      <button onclick="quickFilter('today')" style="flex:1;padding:10px;border-radius:12px;border:2px solid ${filterFrom===todayISO()&&filterTo===todayISO()?'#667eea':'#2a2a4a'};background:${filterFrom===todayISO()&&filterTo===todayISO()?'#667eea':'#13132a'};color:#fff;font-size:13px;font-weight:800;cursor:pointer">
+        📅 Today
+      </button>
+      <button onclick="quickFilter('yesterday')" style="flex:1;padding:10px;border-radius:12px;border:2px solid ${filterFrom===yesterdayISO()&&filterTo===yesterdayISO()?'#f5576c':'#2a2a4a'};background:${filterFrom===yesterdayISO()&&filterTo===yesterdayISO()?'#f5576c':'#13132a'};color:#fff;font-size:13px;font-weight:800;cursor:pointer">
+        ⏪ Yesterday
+      </button>
+      ${filterActive?`<button onclick="clearFilter()" style="padding:10px 14px;border-radius:12px;border:2px solid #333;background:#1e1e3a;color:#aaa;font-size:13px;font-weight:800;cursor:pointer">✕</button>`:""}
     </div>
 
     <!-- DATE RANGE FILTER BOX -->
