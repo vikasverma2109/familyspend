@@ -1125,11 +1125,20 @@ function renderExport(){
     </div>
     <div class="export-screen">
 
+      <!-- CATEGORY FILTER DROPDOWN -->
+      <div style="background:#1e1e3a;border-radius:14px;padding:14px;margin-bottom:12px">
+        <label class="field-label">🏷️ Filter by Category</label>
+        <select class="picker" id="exp-category" style="width:100%">
+          <option value="all">📦 All Categories</option>
+          ${CATEGORIES.map(c=>`<option value="${c.id}">${c.emoji} ${c.label}</option>`).join("")}
+        </select>
+      </div>
+
       <!-- OPTION 1: BY MONTH -->
       <div style="background:#13132a;border-radius:16px;padding:16px;margin-bottom:12px">
         <div style="font-size:13px;font-weight:800;color:#7c7cff;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px">📅 Export by Month</div>
         <label class="field-label">Year</label>
-        <select class="picker" id="exp-year" style="width:100%;margin-bottom:12px" onchange="render()">
+        <select class="picker" id="exp-year" style="width:100%;margin-bottom:12px">
           ${years.map(y=>`<option value="${y}">${y}</option>`).join("")}
         </select>
         <label class="field-label">Select Month</label>
@@ -1243,18 +1252,38 @@ function fallbackDownload(blob, filename){
   showToast("✅ Downloaded! Open in Files app");
 }
 
+function getSelectedCategory(){
+  const el = document.getElementById("exp-category");
+  return el ? el.value : "all";
+}
+
+function filterByCategory(expenses){
+  const cat = getSelectedCategory();
+  if(cat==="all") return expenses;
+  return expenses.filter(e=>e.category===cat);
+}
+
+function getCatLabel(){
+  const cat = getSelectedCategory();
+  if(cat==="all") return "All Categories";
+  const c = CATEGORIES.find(x=>x.id===cat);
+  return c ? c.emoji+" "+c.label : cat;
+}
+
 function exportByMonth(){
   const yearEl = document.getElementById("exp-year");
   const year   = yearEl ? parseInt(yearEl.value) : new Date().getFullYear();
   if(selectedMonth===-1){ showToast("Please select a month first!",true); return; }
-  const filtered = state.expenses.filter(e=>{
+  let filtered = state.expenses.filter(e=>{
     const d = new Date(e.timestamp);
     return d.getFullYear()===year && d.getMonth()===selectedMonth;
   });
-  if(filtered.length===0){ showToast("No expenses for this month!",true); return; }
-  const title    = "FamilySpend — "+MONTHS[selectedMonth]+" "+year;
+  filtered = filterByCategory(filtered);
+  if(filtered.length===0){ showToast("No expenses found!",true); return; }
+  const catLabel = getCatLabel();
+  const title    = "FamilySpend — "+MONTHS[selectedMonth]+" "+year+" | "+catLabel;
   const {csv}    = buildCSV(filtered, title);
-  const filename = "FamilySpend-"+MONTHS[selectedMonth]+"-"+year+".csv";
+  const filename = "FamilySpend-"+MONTHS[selectedMonth]+"-"+year+(getSelectedCategory()!=="all"?"-"+getSelectedCategory():"")+".csv";
   downloadCSV(csv, filename);
 }
 
@@ -1263,22 +1292,26 @@ function exportByRange(){
   const toEl   = document.getElementById("exp-to");
   if(!fromEl?.value||!toEl?.value){ showToast("Please select both dates!",true); return; }
   if(fromEl.value > toEl.value){ showToast("Start date must be before end date!",true); return; }
-  const filtered = state.expenses.filter(e=>{
+  let filtered = state.expenses.filter(e=>{
     const d = e.timestamp.split("T")[0];
     return d >= fromEl.value && d <= toEl.value;
   });
-  if(filtered.length===0){ showToast("No expenses in this range!",true); return; }
-  const title    = "FamilySpend — "+fromEl.value+" to "+toEl.value;
+  filtered = filterByCategory(filtered);
+  if(filtered.length===0){ showToast("No expenses found!",true); return; }
+  const catLabel = getCatLabel();
+  const title    = "FamilySpend — "+fromEl.value+" to "+toEl.value+" | "+catLabel;
   const {csv}    = buildCSV(filtered, title);
-  const filename = "FamilySpend-"+fromEl.value+"-to-"+toEl.value+".csv";
+  const filename = "FamilySpend-"+fromEl.value+"-to-"+toEl.value+(getSelectedCategory()!=="all"?"-"+getSelectedCategory():"")+".csv";
   downloadCSV(csv, filename);
 }
 
 function exportAll(){
-  if(state.expenses.length===0){ showToast("No expenses to export!",true); return; }
-  const title    = "FamilySpend — All Expenses";
-  const {csv}    = buildCSV(state.expenses, title);
-  const filename = "FamilySpend-All-"+new Date().toISOString().split("T")[0]+".csv";
+  let expenses = filterByCategory(state.expenses);
+  if(expenses.length===0){ showToast("No expenses found!",true); return; }
+  const catLabel = getCatLabel();
+  const title    = "FamilySpend — All Expenses | "+catLabel;
+  const {csv}    = buildCSV(expenses, title);
+  const filename = "FamilySpend-All"+(getSelectedCategory()!=="all"?"-"+getSelectedCategory():"")+"-"+new Date().toISOString().split("T")[0]+".csv";
   downloadCSV(csv, filename);
 }
 
