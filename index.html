@@ -76,6 +76,16 @@ input:focus,select:focus { outline:none; }
 
 .login-wrap { max-width:340px; margin:0 auto; padding:60px 24px 40px; text-align:center; }
 .user-btn { width:100%; display:flex; align-items:center; gap:16px; padding:18px 20px; border-radius:16px; border:2px solid; background:#1a1a2e; cursor:pointer; margin-bottom:14px; color:#fff; }
+/* PIN PAD */
+.pin-wrap { max-width:320px; margin:0 auto; padding:40px 24px; text-align:center; }
+.pin-dots { display:flex; justify-content:center; gap:16px; margin:24px 0; }
+.pin-dot { width:18px; height:18px; border-radius:50%; border:2px solid #667eea; background:transparent; transition:0.2s; }
+.pin-dot.filled { background:#667eea; }
+.pin-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:260px; margin:0 auto; }
+.pin-key { background:#13132a; border:2px solid #2a2a4a; border-radius:16px; color:#fff; font-size:22px; font-weight:900; padding:18px; cursor:pointer; }
+.pin-key:active { background:#667eea; }
+.pin-key.del { font-size:18px; color:#888; }
+.pin-error { color:#ef4444; font-size:13px; font-weight:700; margin-top:8px; min-height:20px; }
 
 .form-wrap { padding:18px; }
 .badge { border-radius:12px; padding:12px 16px; margin-bottom:10px; font-size:14px; }
@@ -134,6 +144,15 @@ input:checked + .date-slider:before { transform:translateX(20px); }
 .export-result.show { display:block; }
 .export-result-title { color:#10b981; font-weight:800; font-size:14px; margin-bottom:8px; }
 .export-result-stats { color:#aaa; font-size:13px; line-height:1.8; }
+/* DELETE CONFIRM MODAL */
+.confirm-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:300; display:flex; align-items:center; justify-content:center; padding:20px; }
+.confirm-box { background:#13132a; border-radius:24px; padding:28px 24px; width:100%; max-width:360px; text-align:center; border:2px solid #ef444444; }
+.confirm-icon { font-size:48px; margin-bottom:12px; }
+.confirm-title { font-size:18px; font-weight:900; color:#fff; margin-bottom:8px; }
+.confirm-detail { background:#1e1e3a; border-radius:12px; padding:14px; margin:16px 0; text-align:left; }
+.confirm-actions { display:flex; gap:10px; margin-top:20px; }
+.confirm-yes { flex:1; background:#ef4444; border:none; border-radius:14px; color:#fff; font-size:16px; font-weight:900; padding:16px; cursor:pointer; }
+.confirm-no { flex:1; background:#1e1e3a; border:2px solid #333; border-radius:14px; color:#aaa; font-size:16px; font-weight:800; padding:16px; cursor:pointer; }
 .toast { position:fixed; top:16px; left:50%; transform:translateX(-50%); color:#fff; padding:10px 22px; border-radius:30px; font-size:14px; font-weight:700; z-index:999; white-space:nowrap; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
 /* EXPORT IMPORT */
 .data-box { margin:0 16px 8px; background:#13132a; border-radius:16px; padding:14px; }
@@ -196,8 +215,16 @@ function getCatData(expenses){
 function maxOf(arr){ return arr.reduce((m,x)=>Math.max(m,x.total||0),0)||1; }
 
 // ── STATE ──────────────────────────────────────────────────────────────────
+// Default PINs — user can change in settings
+const DEFAULT_PINS = { vikas:"1234", priyanka:"5678" };
+function getPins(){ try{ return JSON.parse(localStorage.getItem("fs_pins")||JSON.stringify(DEFAULT_PINS)); }catch{ return DEFAULT_PINS; } }
+function savePins(pins){ localStorage.setItem("fs_pins", JSON.stringify(pins)); }
+
+let pinInput = "";
+let pinTarget = null; // which user is trying to login
+
 let state = {
-  user: localStorage.getItem("fs_user")||null,
+  user: null, // always start logged out for security
   expenses: JSON.parse(localStorage.getItem("fs_expenses")||"[]"),
   view: "home",
   stab: "daily",
@@ -209,6 +236,7 @@ let state = {
   filterFrom: "",
   filterTo: "",
   filterActive: false,
+  confirmDelete: null,
   exportView: false,
 };
 
@@ -222,16 +250,56 @@ function setState(patch){
     if(n && n.value !== undefined) state.form.note = n.value;
     if(d && d.value) state.form.manualDate = d.value;
   }
+  // ⚠️ SAFETY: Never replace expenses with empty array via setState
+  if(patch.expenses !== undefined && patch.expenses.length === 0 && state.expenses.length > 0){
+    delete patch.expenses;
+  }
   state = {...state,...patch};
   render();
 }
 
 function saveLocal(){
+  // ⚠️ SAFETY: Never overwrite existing data with empty array
+  const existing = JSON.parse(localStorage.getItem("fs_expenses")||"[]");
+  if(state.expenses.length === 0 && existing.length > 0){
+    state.expenses = existing; // restore from localStorage
+    return;
+  }
   localStorage.setItem("fs_expenses", JSON.stringify(state.expenses));
   if(state.user) localStorage.setItem("fs_user", state.user);
+  // Save auto backup every time data changes
+  if(state.expenses.length > 0) saveBackup(state.expenses);
   // Also save to cloud if configured
   const cfg = getCloudConfig();
   if(cfg.binId && cfg.apiKey) cloudSave(state.expenses);
+}
+
+// ── AUTO BACKUP ───────────────────────────────────────────────────────────────
+function saveBackup(expenses){
+  try {
+    // Keep last 5 backups with timestamps
+    const backups = JSON.parse(localStorage.getItem("fs_backups")||"[]");
+    const latest  = backups[0];
+    // Only save if data actually changed
+    if(latest && JSON.stringify(latest.data) === JSON.stringify(expenses)) return;
+    backups.unshift({ ts: new Date().toISOString(), count: expenses.length, data: expenses });
+    if(backups.length > 5) backups.pop(); // keep only 5
+    localStorage.setItem("fs_backups", JSON.stringify(backups));
+  } catch(e){}
+}
+
+function getBackups(){
+  try { return JSON.parse(localStorage.getItem("fs_backups")||"[]"); } catch{ return []; }
+}
+
+function restoreBackup(idx){
+  const backups = getBackups();
+  if(!backups[idx]){ showToast("Backup not found!",true); return; }
+  const backup = backups[idx];
+  if(!confirm("Restore "+backup.count+" expenses from "+new Date(backup.ts).toLocaleString("en-IN")+"?")) return;
+  localStorage.setItem("fs_expenses", JSON.stringify(backup.data));
+  setState({expenses: backup.data});
+  showToast("✅ Restored "+backup.count+" expenses!");
 }
 
 window.addEventListener("storage", e=>{
@@ -254,10 +322,30 @@ async function cloudLoad(){
     });
     if(!r.ok) return false;
     const d = await r.json();
-    const expenses = d.record.expenses || [];
-    localStorage.setItem("fs_expenses", JSON.stringify(expenses));
-    state.expenses = expenses;
-    return true;
+    const cloudExpenses = d.record.expenses || [];
+    const localExpenses = state.expenses || [];
+
+    // ⚠️ CONFLICT PROTECTION — never overwrite more data with less data
+    if(cloudExpenses.length === 0 && localExpenses.length > 0){
+      // Cloud is empty but we have local data — push local to cloud instead
+      await cloudSave(localExpenses);
+      return false;
+    }
+
+    // If cloud has MORE data than local — use cloud
+    if(cloudExpenses.length >= localExpenses.length){
+      localStorage.setItem("fs_expenses", JSON.stringify(cloudExpenses));
+      state.expenses = cloudExpenses;
+      return true;
+    }
+
+    // If local has MORE data than cloud — push local to cloud
+    if(localExpenses.length > cloudExpenses.length){
+      await cloudSave(localExpenses);
+      return false;
+    }
+
+    return false;
   } catch{ return false; }
 }
 
@@ -389,6 +477,31 @@ function rankRows(arr,colorFn,labelFn,valFn){
 
 // ── SCREENS ────────────────────────────────────────────────────────────────
 function renderLogin(){
+  // If a user is selected, show PIN pad
+  if(pinTarget){
+    const u = USERS.find(u=>u.id===pinTarget);
+    return `<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
+    <div class="pin-wrap">
+      <button onclick="pinTarget=null;pinInput='';render()" style="background:none;border:none;color:#7c7cff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:16px">← Back</button>
+      <div style="font-size:44px">${u.avatar}</div>
+      <div style="font-size:20px;font-weight:900;color:${u.color};margin-top:8px">${u.label}</div>
+      <div style="font-size:14px;color:#888;margin-top:4px">Enter your PIN</div>
+      <div class="pin-dots">
+        ${[0,1,2,3].map(i=>`<div class="pin-dot ${pinInput.length>i?'filled':''}"></div>`).join("")}
+      </div>
+      <div class="pin-error" id="pin-error"></div>
+      <div class="pin-grid" style="margin-top:12px">
+        ${[1,2,3,4,5,6,7,8,9].map(n=>`
+        <button class="pin-key" onclick="pinPress('${n}')">${n}</button>`).join("")}
+        <button class="pin-key" onclick="pinPress('clear')" style="font-size:14px;color:#888">Clear</button>
+        <button class="pin-key" onclick="pinPress('0')">0</button>
+        <button class="pin-key del" onclick="pinPress('del')">⌫</button>
+      </div>
+      <button onclick="pinTarget=null;pinInput='';render()" style="margin-top:20px;background:none;border:none;color:#555;font-size:13px;cursor:pointer">Cancel</button>
+    </div></div>`;
+  }
+
+  // User selection screen
   return `<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;">
   <div class="login-wrap">
     <div style="font-size:60px;margin-bottom:8px">💰</div>
@@ -396,12 +509,59 @@ function renderLogin(){
     <p style="color:#666;margin-bottom:40px;font-size:14px">Shared expense tracker for couples</p>
     <p style="color:#aaa;font-weight:700;margin-bottom:16px;font-size:16px">Who are you?</p>
     ${USERS.map(u=>`
-    <button class="user-btn" style="border-color:${u.color}" onclick="setState({user:'${u.id}',view:'home'})">
+    <button class="user-btn" style="border-color:${u.color}" onclick="selectUser('${u.id}')">
       <span style="font-size:32px">${u.avatar}</span>
-      <span style="font-size:18px;font-weight:800;color:${u.color}">${u.label}</span>
+      <div style="flex:1;text-align:left">
+        <div style="font-size:18px;font-weight:800;color:${u.color}">${u.label}</div>
+        <div style="font-size:11px;color:#555">🔒 PIN protected</div>
+      </div>
+      <span style="font-size:20px">›</span>
     </button>`).join("")}
-    <p style="color:#444;font-size:12px;margin-top:20px">Data saved on this device 📱</p>
+    <p style="color:#444;font-size:12px;margin-top:20px">Each person has their own PIN 🔒</p>
   </div></div>`;
+}
+
+function selectUser(userId){
+  pinTarget = userId;
+  pinInput  = "";
+  render();
+}
+
+function pinPress(key){
+  if(key==="del"){
+    pinInput = pinInput.slice(0,-1);
+  } else if(key==="clear"){
+    pinInput = "";
+  } else {
+    if(pinInput.length >= 4) return;
+    pinInput += key;
+    // Auto check when 4 digits entered
+    if(pinInput.length === 4){
+      setTimeout(checkPin, 100);
+    }
+  }
+  render();
+  // re-render keeps pin dots but we need to restore pinTarget
+  pinTarget = pinTarget;
+}
+
+function checkPin(){
+  const pins = getPins();
+  const correct = pins[pinTarget];
+  if(pinInput === correct){
+    const userId = pinTarget;
+    pinTarget = null;
+    pinInput  = "";
+    setState({user: userId, view:"home"});
+    showToast("Welcome "+USERS.find(u=>u.id===userId)?.label+"! 👋");
+  } else {
+    pinInput = "";
+    render();
+    setTimeout(()=>{
+      const errEl = document.getElementById("pin-error");
+      if(errEl) errEl.textContent = "❌ Wrong PIN! Try again";
+    }, 50);
+  }
 }
 
 function renderAdd(){
@@ -959,10 +1119,51 @@ function closeEdit(){
 }
 
 function confirmDelete(id){
-  if(confirm("Delete this expense?")){
-    closeEdit();
-    delExpense(id);
-  }
+  const exp  = state.expenses.find(e=>e.id===id);
+  if(!exp) return;
+  const cat  = CATEGORIES.find(c=>c.id===exp.category);
+  const payer= USERS.find(u=>u.id===exp.paidBy);
+  const date = new Date(exp.timestamp).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+  setState({confirmDelete:{id, cat, payer, exp, date}});
+}
+
+function renderConfirmModal(){
+  const c = state.confirmDelete;
+  if(!c) return "";
+  return `<div class="confirm-overlay">
+    <div class="confirm-box">
+      <div class="confirm-icon">🗑️</div>
+      <div class="confirm-title">Delete Expense?</div>
+      <div style="color:#888;font-size:13px">This cannot be undone!</div>
+      <div class="confirm-detail">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:28px">${c.cat?.emoji||"📦"}</span>
+          <div>
+            <div style="font-weight:800;font-size:15px">${c.cat?.label||"Other"}</div>
+            <div style="font-size:12px;color:#888">${c.exp.note||"No note"}</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:13px;color:#888">📅 ${c.date}</span>
+          <span style="font-size:18px;font-weight:900;color:${c.exp.amount<0?'#10b981':'#fff'}">${fmt(c.exp.amount)}</span>
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:#888">
+          👤 Paid by <strong style="color:${c.payer?.color||'#fff'}">${c.payer?.label||c.exp.paidBy}</strong>
+        </div>
+      </div>
+      <div class="confirm-actions">
+        <button class="confirm-no" onclick="setState({confirmDelete:null})">✕ Cancel</button>
+        <button class="confirm-yes" onclick="doDelete('${c.id}')">🗑 Yes, Delete</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function doDelete(id){
+  closeEdit();
+  setState({confirmDelete:null});
+  delExpense(id);
+  showToast("🗑 Expense deleted");
 }
 
 function saveEdit(){
@@ -1000,10 +1201,11 @@ function saveEdit(){
 // ── CLOUD SETUP SCREEN ────────────────────────────────────────────────────
 function renderCloud(){
   const cfg = getCloudConfig();
+  const cfg_user = state.user;
   return `<div class="page">
     <div class="header">
       <button class="back-btn" onclick="setState({view:'home'})">← Back</button>
-      <span class="header-title">☁️ Cloud Sync Setup</span>
+      <span class="header-title">⚙️ Settings & Sync</span>
       <div style="width:60px"></div>
     </div>
     <div class="form-wrap">
@@ -1019,6 +1221,15 @@ function renderCloud(){
         <div style="color:#f59e0b;font-weight:800;font-size:15px">Cloud Sync is OFF</div>
         <div style="color:#888;font-size:12px;margin-top:4px">Data only saved on this phone</div>
       </div>`}
+
+      <!-- CHANGE PIN -->
+      <div style="background:#1e1e3a;border-radius:14px;padding:16px;margin-bottom:16px">
+        <div style="font-size:12px;font-weight:800;color:#f59e0b;text-transform:uppercase;margin-bottom:12px">🔒 Change Your PIN</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px">Only ${USERS.find(u=>u.id===cfg_user)?.label} can change their own PIN</div>
+        <label class="field-label">New PIN (4 digits)</label>
+        <input class="note-input" id="new-pin" type="number" inputmode="numeric" placeholder="Enter 4 digit PIN" maxlength="4" style="margin-bottom:10px;letter-spacing:8px;font-size:20px;font-weight:900"/>
+        <button onclick="changePin()" style="width:100%;background:#f59e0b;border:none;border-radius:12px;color:#000;font-size:14px;font-weight:900;padding:12px;cursor:pointer">🔒 Save New PIN</button>
+      </div>
 
       <div style="background:#1e1e3a;border-radius:14px;padding:16px;margin-bottom:16px">
         <div style="font-size:13px;color:#aaa;line-height:1.6">
@@ -1094,22 +1305,41 @@ async function disconnectCloud(){
   setState({view:"home"});
 }
 
+function changePin(){
+  const el = document.getElementById("new-pin");
+  if(!el||!el.value){ showToast("Enter a 4 digit PIN!",true); return; }
+  const newPin = el.value.trim();
+  if(newPin.length!==4||isNaN(newPin)){ showToast("PIN must be exactly 4 digits!",true); return; }
+  const pins = getPins();
+  pins[state.user] = newPin;
+  savePins(pins);
+  showToast("✅ PIN changed successfully!");
+  el.value = "";
+}
+
 // Auto load from cloud on start
 async function initCloud(){
-  const loaded = await cloudLoad();
-  if(loaded){
-    render();
+  // STEP 1: Always load from localStorage first (instant, safe)
+  const local = JSON.parse(localStorage.getItem("fs_expenses")||"[]");
+  if(local.length > 0){
+    state.expenses = local;
   }
+  // STEP 2: Then try cloud (only updates if cloud has MORE data)
+  const loaded = await cloudLoad();
+  if(loaded) render();
 }
 initCloud();
 
-// Auto sync every 10 seconds if cloud configured
+// Auto sync every 15 seconds if cloud configured
 setInterval(async()=>{
   const cfg = getCloudConfig();
   if(!cfg.binId) return;
+  // Only sync if not currently adding expense (protect user input)
+  if(state.view === "add") return;
+  const before = state.expenses.length;
   const r = await cloudLoad();
-  if(r) render();
-}, 10000);
+  if(r && state.expenses.length >= before) render();
+}, 15000);
 
 // ── EXPORT SCREEN ─────────────────────────────────────────────────────────
 function renderExport(){
@@ -1340,7 +1570,8 @@ function render(){
 
   document.getElementById("root").innerHTML =
     (toast?`<div class="toast" style="background:${toast.err?'#ef4444':'#10b981'}">${toast.msg}</div>`:"") +
-    content;
+    content +
+    renderConfirmModal();
 
   // Restore cursor position in amount field if it was focused
   if(view==="add"){
