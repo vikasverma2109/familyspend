@@ -325,28 +325,42 @@ async function cloudLoad(){
     const cloudExpenses = d.record.expenses || [];
     const localExpenses = state.expenses || [];
 
-    // ⚠️ CONFLICT PROTECTION — never overwrite more data with less data
-    if(cloudExpenses.length === 0 && localExpenses.length > 0){
-      // Cloud is empty but we have local data — push local to cloud instead
-      await cloudSave(localExpenses);
-      return false;
+    // ✅ SMART MERGE — combine both, keep all unique expenses by ID
+    const merged = mergeExpenses(localExpenses, cloudExpenses);
+
+    const changed = merged.length !== localExpenses.length ||
+                    merged.some(m=>!localExpenses.find(l=>l.id===m.id));
+
+    // Save merged result everywhere
+    localStorage.setItem("fs_expenses", JSON.stringify(merged));
+    state.expenses = merged;
+
+    // Push merged back to cloud so both phones stay in sync
+    if(changed || cloudExpenses.length !== merged.length){
+      await cloudSave(merged);
     }
 
-    // If cloud has MORE data than local — use cloud
-    if(cloudExpenses.length >= localExpenses.length){
-      localStorage.setItem("fs_expenses", JSON.stringify(cloudExpenses));
-      state.expenses = cloudExpenses;
-      return true;
-    }
-
-    // If local has MORE data than cloud — push local to cloud
-    if(localExpenses.length > cloudExpenses.length){
-      await cloudSave(localExpenses);
-      return false;
-    }
-
-    return false;
+    return changed;
   } catch{ return false; }
+}
+
+function mergeExpenses(local, cloud){
+  // Combine all expenses from both phones by unique ID
+  const map = {};
+  // Add local first
+  local.forEach(e=>{ map[e.id] = e; });
+  // Add cloud — if same ID exists, keep the one with newer timestamp
+  cloud.forEach(e=>{
+    if(!map[e.id]){
+      map[e.id] = e; // new expense from other phone
+    } else {
+      // Same ID — keep whichever was modified more recently
+      // (use timestamp as tiebreaker)
+      if(e.timestamp > map[e.id].timestamp) map[e.id] = e;
+    }
+  });
+  // Sort by timestamp descending (newest first)
+  return Object.values(map).sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
 }
 
 async function cloudSave(expenses){
@@ -1330,7 +1344,7 @@ async function initCloud(){
 }
 initCloud();
 
-// Auto sync every 15 seconds if cloud configured
+// Auto sync every 10 seconds if cloud configured
 setInterval(async()=>{
   const cfg = getCloudConfig();
   if(!cfg.binId) return;
@@ -1338,8 +1352,12 @@ setInterval(async()=>{
   if(state.view === "add") return;
   const before = state.expenses.length;
   const r = await cloudLoad();
-  if(r && state.expenses.length >= before) render();
-}, 15000);
+  if(r){
+    const added = state.expenses.length - before;
+    if(added > 0) showToast("🔄 "+added+" new expense(s) synced!");
+    render();
+  }
+}, 10000);
 
 // ── EXPORT SCREEN ─────────────────────────────────────────────────────────
 function renderExport(){
